@@ -526,7 +526,7 @@
         }
         break;
       case 'lasso':
-        if (lassoPoints.length > 10) {
+        if (lassoPoints.length >= 3) {
           applyLassoSelection();
         }
         lassoPoints = [];
@@ -855,57 +855,87 @@
     showLoading('去除选区背景中...');
 
     requestAnimationFrame(() => {
-      // Sample border of selection for background color
-      const samples = [];
-      const step = Math.max(1, Math.floor(Math.min(sel.w, sel.h) / 20));
-
-      for (let x = sel.x; x < sel.x + sel.w; x += step) {
-        if (x >= 0 && x < w) {
-          if (sel.y >= 0 && sel.y < h) samples.push((sel.y * w + x) * 4);
-          const by = sel.y + sel.h - 1;
-          if (by >= 0 && by < h) samples.push((by * w + x) * 4);
-        }
-      }
-      for (let y = sel.y; y < sel.y + sel.h; y += step) {
-        if (y >= 0 && y < h) {
-          if (sel.x >= 0 && sel.x < w) samples.push((y * w + sel.x) * 4);
-          const bx = sel.x + sel.w - 1;
-          if (bx >= 0 && bx < w) samples.push((y * w + bx) * 4);
-        }
-      }
-
-      // Average the border colors
-      let avgR = 0, avgG = 0, avgB = 0;
-      for (const i of samples) {
-        avgR += data[i];
-        avgG += data[i + 1];
-        avgB += data[i + 2];
-      }
-      avgR = Math.round(avgR / samples.length);
-      avgG = Math.round(avgG / samples.length);
-      avgB = Math.round(avgB / samples.length);
-
-      // Remove matching colors within selection
       const x1 = Math.max(0, sel.x);
       const y1 = Math.max(0, sel.y);
       const x2 = Math.min(w, sel.x + sel.w);
       const y2 = Math.min(h, sel.y + sel.h);
 
-      for (let y = y1; y < y2; y++) {
-        for (let x = x1; x < x2; x++) {
-          const i = y * w + x;
-          const pi = i * 4;
-          const dr = data[pi] - avgR;
-          const dg = data[pi + 1] - avgG;
-          const db = data[pi + 2] - avgB;
-          const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+      // Sample border colors, find most common background color (quantized)
+      const colorMap = {};
+      const step = Math.max(1, Math.floor(Math.min(sel.w, sel.h) / 30));
+      const samplePixel = (x, y) => {
+        if (x < 0 || x >= w || y < 0 || y >= h) return;
+        const i = (y * w + x) * 4;
+        const r = Math.round(data[i] / 8) * 8;
+        const g = Math.round(data[i + 1] / 8) * 8;
+        const b = Math.round(data[i + 2] / 8) * 8;
+        const key = `${r},${g},${b}`;
+        colorMap[key] = (colorMap[key] || 0) + 1;
+      };
+      for (let x = x1; x < x2; x += step) {
+        samplePixel(x, y1);
+        samplePixel(x, y2 - 1);
+      }
+      for (let y = y1; y < y2; y += step) {
+        samplePixel(x1, y);
+        samplePixel(x2 - 1, y);
+      }
 
-          if (dist <= tolerance) {
-            state.maskData[i] = 0;
-          } else if (featherSize > 0 && dist <= tolerance + featherSize * 10) {
-            const alpha = Math.round(((dist - tolerance) / (featherSize * 10)) * 255);
-            state.maskData[i] = Math.min(state.maskData[i], alpha);
-          }
+      let maxCount = 0;
+      let bgColor = '128,128,128';
+      for (const key in colorMap) {
+        if (colorMap[key] > maxCount) {
+          maxCount = colorMap[key];
+          bgColor = key;
+        }
+      }
+      const [bgR, bgG, bgB] = bgColor.split(',').map(Number);
+
+      // BFS flood fill from selection border inward
+      const visited = new Uint8Array(w * h);
+      const queue = [];
+
+      // Seed all border pixels of the selection
+      for (let x = x1; x < x2; x++) {
+        const topIdx = y1 * w + x;
+        const botIdx = (y2 - 1) * w + x;
+        if (!visited[topIdx]) { visited[topIdx] = 1; queue.push(topIdx); }
+        if (!visited[botIdx]) { visited[botIdx] = 1; queue.push(botIdx); }
+      }
+      for (let y = y1 + 1; y < y2 - 1; y++) {
+        const leftIdx = y * w + x1;
+        const rightIdx = y * w + (x2 - 1);
+        if (!visited[leftIdx]) { visited[leftIdx] = 1; queue.push(leftIdx); }
+        if (!visited[rightIdx]) { visited[rightIdx] = 1; queue.push(rightIdx); }
+      }
+
+      let removedCount = 0;
+      let qi = 0;
+      const effectiveTolerance = tolerance + 15;
+
+      while (qi < queue.length) {
+        const pos = queue[qi++];
+        const pi = pos * 4;
+        const px = pos % w;
+        const py = (pos - px) / w;
+
+        const dr = data[pi] - bgR;
+        const dg = data[pi + 1] - bgG;
+        const db = data[pi + 2] - bgB;
+        const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+
+        if (dist <= effectiveTolerance) {
+          state.maskData[pos] = 0;
+          removedCount++;
+
+          // Expand to 4-connected neighbors within selection
+          if (px > x1)     { const n = pos - 1; if (!visited[n]) { visited[n] = 1; queue.push(n); } }
+          if (px < x2 - 1) { const n = pos + 1; if (!visited[n]) { visited[n] = 1; queue.push(n); } }
+          if (py > y1)     { const n = pos - w; if (!visited[n]) { visited[n] = 1; queue.push(n); } }
+          if (py < y2 - 1) { const n = pos + w; if (!visited[n]) { visited[n] = 1; queue.push(n); } }
+        } else if (featherSize > 0 && dist <= effectiveTolerance + featherSize * 10) {
+          const alpha = Math.round(((dist - effectiveTolerance) / (featherSize * 10)) * 255);
+          state.maskData[pos] = Math.min(state.maskData[pos], alpha);
         }
       }
 
@@ -913,7 +943,7 @@
       applyMask();
       pushHistory();
       hideLoading();
-      setStatus('选区内背景已去除');
+      setStatus(`选区内去除了 ${removedCount} 个背景像素`);
     });
   }
 
@@ -921,10 +951,13 @@
   function applyLassoSelection() {
     if (!state.image || lassoPoints.length < 3) return;
 
-    showLoading('应用套索选区...');
+    showLoading('套索抠图中...');
     requestAnimationFrame(() => {
       const w = state.image.width;
       const h = state.image.height;
+      const tolerance = parseInt(dom.tolerance.value);
+      const featherSize = parseInt(dom.feather.value);
+      const data = state.currentData.data;
 
       // Find bounding box
       let minX = w, minY = h, maxX = 0, maxY = 0;
@@ -939,25 +972,100 @@
       maxX = Math.min(w - 1, maxX);
       maxY = Math.min(h - 1, maxY);
 
-      // Remove pixels outside lasso (within bounding box)
+      // Build inside mask for the lasso polygon
+      const insideMask = new Uint8Array(w * h);
       for (let y = minY; y <= maxY; y++) {
         for (let x = minX; x <= maxX; x++) {
-          if (!isPointInPolygon(x, y, lassoPoints)) {
-            state.maskData[y * w + x] = 0;
+          if (isPointInPolygon(x, y, lassoPoints)) {
+            insideMask[y * w + x] = 1;
           }
         }
       }
 
-      // Also remove everything outside the bounding box
+      // Step 1: Remove everything outside the lasso
       for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
-          if (x < minX || x > maxX || y < minY || y > maxY) {
+          if (!insideMask[y * w + x]) {
             state.maskData[y * w + x] = 0;
           }
         }
       }
 
-      const featherSize = parseInt(dom.feather.value);
+      // Step 2: Sample colors along lasso boundary for background detection
+      const colorMap = {};
+      const sampleStep = Math.max(1, Math.floor(lassoPoints.length / 50));
+      for (let i = 0; i < lassoPoints.length; i += sampleStep) {
+        const p = lassoPoints[i];
+        if (p.x >= 0 && p.x < w && p.y >= 0 && p.y < h) {
+          const pi = (p.y * w + p.x) * 4;
+          const r = Math.round(data[pi] / 8) * 8;
+          const g = Math.round(data[pi + 1] / 8) * 8;
+          const b = Math.round(data[pi + 2] / 8) * 8;
+          const key = `${r},${g},${b}`;
+          colorMap[key] = (colorMap[key] || 0) + 1;
+        }
+      }
+
+      let maxCount = 0;
+      let bgColor = '128,128,128';
+      for (const key in colorMap) {
+        if (colorMap[key] > maxCount) {
+          maxCount = colorMap[key];
+          bgColor = key;
+        }
+      }
+      const [bgR, bgG, bgB] = bgColor.split(',').map(Number);
+
+      // Step 3: BFS flood fill from lasso boundary inward to remove background
+      const visited = new Uint8Array(w * h);
+      const queue = [];
+
+      // Seed: inside pixels that are adjacent to outside pixels (boundary)
+      for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+          const idx = y * w + x;
+          if (!insideMask[idx]) continue;
+          const hasOutside =
+            (x > 0 && !insideMask[idx - 1]) ||
+            (x < w - 1 && !insideMask[idx + 1]) ||
+            (y > 0 && !insideMask[idx - w]) ||
+            (y < h - 1 && !insideMask[idx + w]);
+          if (hasOutside) {
+            visited[idx] = 1;
+            queue.push(idx);
+          }
+        }
+      }
+
+      let removedCount = 0;
+      let qi = 0;
+      const effectiveTolerance = tolerance + 15;
+
+      while (qi < queue.length) {
+        const pos = queue[qi++];
+        const pi = pos * 4;
+        const px = pos % w;
+        const py = (pos - px) / w;
+
+        const dr = data[pi] - bgR;
+        const dg = data[pi + 1] - bgG;
+        const db = data[pi + 2] - bgB;
+        const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+
+        if (dist <= effectiveTolerance) {
+          state.maskData[pos] = 0;
+          removedCount++;
+
+          if (px > 0)     { const n = pos - 1; if (!visited[n] && insideMask[n]) { visited[n] = 1; queue.push(n); } }
+          if (px < w - 1) { const n = pos + 1; if (!visited[n] && insideMask[n]) { visited[n] = 1; queue.push(n); } }
+          if (py > 0)     { const n = pos - w; if (!visited[n] && insideMask[n]) { visited[n] = 1; queue.push(n); } }
+          if (py < h - 1) { const n = pos + w; if (!visited[n] && insideMask[n]) { visited[n] = 1; queue.push(n); } }
+        } else if (featherSize > 0 && dist <= effectiveTolerance + featherSize * 10) {
+          const alpha = Math.round(((dist - effectiveTolerance) / (featherSize * 10)) * 255);
+          state.maskData[pos] = Math.min(state.maskData[pos], alpha);
+        }
+      }
+
       if (featherSize > 0) {
         applyFeather(featherSize);
       }
@@ -965,7 +1073,7 @@
       applyMask();
       pushHistory();
       hideLoading();
-      setStatus('套索区域外的内容已去除');
+      setStatus(`套索抠图完成，去除了 ${removedCount} 个背景像素`);
     });
   }
 
