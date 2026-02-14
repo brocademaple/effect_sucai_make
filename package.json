@@ -1,0 +1,12 @@
+{
+  "name": "effect-sucai-maker",
+  "version": "1.0.0",
+  "description": "特效素材制作器 - 图片背景去除工具",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["image", "background-removal", "effect", "material"],
+  "license": "MIT"
+}
