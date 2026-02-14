@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420">
+  <rect width="1200" height="420" fill="#0b1020"/>
+  <style>
+    .h{font:700 24px 'Segoe UI',sans-serif;fill:#e2e8f0}
+    .s{font:400 14px 'Segoe UI',sans-serif;fill:#94a3b8}
+  </style>
+  <text x="36" y="44" class="h">右侧预览区：显示当前裁剪结果</text>
+  <text x="36" y="68" class="s">矩形选区或套索操作后，预览区会聚焦到选中的内容区域。</text>
+
+  <rect x="36" y="96" width="720" height="290" rx="10" fill="#1f2937"/>
+  <rect x="120" y="136" width="550" height="210" fill="#d1d5db"/>
+  <circle cx="396" cy="240" r="84" fill="#e11d48"/>
+  <rect x="250" y="155" width="300" height="170" fill="none" stroke="#6366f1" stroke-width="4" stroke-dasharray="8 6"/>
+
+  <path d="M790 240 L880 240" stroke="#64748b" stroke-width="4" marker-end="url(#arr)"/>
+  <defs><marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#64748b"/></marker></defs>
+
+  <rect x="900" y="126" width="264" height="210" rx="10" fill="#111827" stroke="#64748b"/>
+  <rect x="928" y="156" width="208" height="152" fill="#d1d5db"/>
+  <circle cx="1032" cy="232" r="67" fill="#e11d48"/>
+</svg>

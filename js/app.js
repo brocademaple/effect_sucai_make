@@ -24,6 +24,7 @@
     historyIndex: -1,
     maxHistory: 30,
     previewBg: 'checkerboard',
+    previewFocus: null,    // { x1, y1, x2, y2 } 当前预览聚焦区域（裁剪效果）
   };
 
   // ===== DOM References =====
@@ -520,6 +521,12 @@
       case 'select':
         if (state.selection && state.selection.w > 2 && state.selection.h > 2) {
           dom.selectionActions.style.display = 'flex';
+          setPreviewFocus({
+            x1: state.selection.x,
+            y1: state.selection.y,
+            x2: state.selection.x + state.selection.w,
+            y2: state.selection.y + state.selection.h,
+          });
           setStatus('选区已创建 - 点击「删除背景」或按 Delete 去除选区内背景');
         } else {
           clearSelection();
@@ -609,6 +616,25 @@
     state.selection = null;
     clearOverlay();
     dom.selectionActions.style.display = 'none';
+    state.previewFocus = null;
+    updatePreview();
+  }
+
+  function setPreviewFocus(bounds) {
+    if (!state.image) return;
+    if (!bounds) {
+      state.previewFocus = null;
+      updatePreview();
+      return;
+    }
+    const next = {
+      x1: Math.max(0, Math.floor(bounds.x1)),
+      y1: Math.max(0, Math.floor(bounds.y1)),
+      x2: Math.min(state.image.width, Math.ceil(bounds.x2)),
+      y2: Math.min(state.image.height, Math.ceil(bounds.y2)),
+    };
+    state.previewFocus = (next.x2 > next.x1 && next.y2 > next.y1) ? next : null;
+    updatePreview();
   }
 
   // ===== Background Removal: Color Pick =====
@@ -860,6 +886,15 @@
       const x2 = Math.min(w, sel.x + sel.w);
       const y2 = Math.min(h, sel.y + sel.h);
 
+      // 先裁剪：仅保留矩形选区
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (x < x1 || x >= x2 || y < y1 || y >= y2) {
+            state.maskData[y * w + x] = 0;
+          }
+        }
+      }
+
       // Sample border colors, find most common background color (quantized)
       const colorMap = {};
       const step = Math.max(1, Math.floor(Math.min(sel.w, sel.h) / 30));
@@ -940,6 +975,7 @@
       }
 
       clearSelection();
+      setPreviewFocus({ x1, y1, x2, y2 });
       applyMask();
       pushHistory();
       hideLoading();
@@ -1071,6 +1107,7 @@
       }
 
       applyMask();
+      setPreviewFocus({ x1: minX, y1: minY, x2: maxX + 1, y2: maxY + 1 });
       pushHistory();
       hideLoading();
       setStatus(`套索抠图完成，去除了 ${removedCount} 个背景像素`);
@@ -1275,10 +1312,16 @@
         break;
     }
 
-    // Fit image in preview
-    const scale = Math.min(pw / state.image.width, ph / state.image.height);
-    const dw = state.image.width * scale;
-    const dh = state.image.height * scale;
+    const focus = state.previewFocus;
+    const sx = focus ? focus.x1 : 0;
+    const sy = focus ? focus.y1 : 0;
+    const sw = focus ? focus.x2 - focus.x1 : state.image.width;
+    const sh = focus ? focus.y2 - focus.y1 : state.image.height;
+
+    // Fit image/selection in preview
+    const scale = Math.min(pw / sw, ph / sh);
+    const dw = sw * scale;
+    const dh = sh * scale;
     const dx = (pw - dw) / 2;
     const dy = (ph - dh) / 2;
 
@@ -1289,7 +1332,7 @@
     const tempCtx = tempCanvas.getContext('2d');
     tempCtx.putImageData(state.currentData, 0, 0);
 
-    previewCtx.drawImage(tempCanvas, dx, dy, dw, dh);
+    previewCtx.drawImage(tempCanvas, sx, sy, sw, sh, dx, dy, dw, dh);
   }
 
   function drawCheckerboard(ctx, w, h, size) {
@@ -1328,6 +1371,7 @@
     state.historyIndex--;
     state.maskData = new Uint8Array(state.history[state.historyIndex]);
     applyMask();
+    state.previewFocus = null;
     updateHistoryButtons();
     setStatus('已撤销');
   }
@@ -1337,6 +1381,7 @@
     state.historyIndex++;
     state.maskData = new Uint8Array(state.history[state.historyIndex]);
     applyMask();
+    state.previewFocus = null;
     updateHistoryButtons();
     setStatus('已重做');
   }
@@ -1346,6 +1391,7 @@
     state.maskData.fill(255);
     applyMask();
     pushHistory();
+    state.previewFocus = null;
     clearSelection();
     setStatus('图片已重置');
   }
