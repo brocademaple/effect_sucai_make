@@ -742,6 +742,50 @@ body {
   font-size: 14px;
 }
 
+/* ===== Selection Actions Floating Bar ===== */
+.selection-actions {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  z-index: 50;
+}
+
+.sa-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.sa-btn:hover {
+  background: var(--border-light);
+}
+.sa-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+.sa-btn-primary:hover {
+  background: var(--accent-hover);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
 /* ===== Selection Overlay ===== */
 .selection-rect {
   border: 2px dashed var(--accent);

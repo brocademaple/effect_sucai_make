@@ -40,6 +40,9 @@
     previewCanvas: $('#previewCanvas'),
     btnUpload: $('#btnUpload'),
     btnUploadCenter: $('#btnUploadCenter'),
+    selectionActions: $('#selectionActions'),
+    btnDeleteSelection: $('#btnDeleteSelection'),
+    btnCancelSelection: $('#btnCancelSelection'),
     btnExportHeader: $('#btnExportHeader'),
     exportWrapper: $('.export-wrapper'),
     exportDropdown: $('#exportDropdown'),
@@ -135,6 +138,14 @@
       state.zoom = parseInt(dom.zoomSlider.value) / 100;
       applyTransform();
       updateZoomDisplay();
+    });
+
+    // Selection action buttons
+    dom.btnDeleteSelection.addEventListener('click', () => {
+      removeSelectionBackground();
+    });
+    dom.btnCancelSelection.addEventListener('click', () => {
+      clearSelection();
     });
 
     // Actions
@@ -409,11 +420,12 @@
 
   function getCanvasCoords(e) {
     const rect = dom.overlayCanvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / state.zoom;
-    const y = (e.clientY - rect.top) / state.zoom;
+    // Use actual pixel ratio instead of state.zoom for precision
+    const scaleX = dom.overlayCanvas.width / rect.width;
+    const scaleY = dom.overlayCanvas.height / rect.height;
     return {
-      x: Math.round(x),
-      y: Math.round(y),
+      x: Math.round((e.clientX - rect.left) * scaleX),
+      y: Math.round((e.clientY - rect.top) * scaleY),
     };
   }
 
@@ -465,8 +477,10 @@
     switch (state.tool) {
       case 'select': {
         const rect = dom.overlayCanvas.getBoundingClientRect();
-        const sx = (state.dragStart.x - rect.left) / state.zoom;
-        const sy = (state.dragStart.y - rect.top) / state.zoom;
+        const scaleX = dom.overlayCanvas.width / rect.width;
+        const scaleY = dom.overlayCanvas.height / rect.height;
+        const sx = (state.dragStart.x - rect.left) * scaleX;
+        const sy = (state.dragStart.y - rect.top) * scaleY;
         state.selection = {
           x: Math.round(Math.min(sx, pos.x)),
           y: Math.round(Math.min(sy, pos.y)),
@@ -505,7 +519,8 @@
     switch (state.tool) {
       case 'select':
         if (state.selection && state.selection.w > 2 && state.selection.h > 2) {
-          setStatus('选区已创建 - 按 Delete 去除选区内背景，或使用取色去背景工具');
+          dom.selectionActions.style.display = 'flex';
+          setStatus('选区已创建 - 点击「删除背景」或按 Delete 去除选区内背景');
         } else {
           clearSelection();
         }
@@ -593,6 +608,7 @@
   function clearSelection() {
     state.selection = null;
     clearOverlay();
+    dom.selectionActions.style.display = 'none';
   }
 
   // ===== Background Removal: Color Pick =====

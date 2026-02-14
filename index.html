@@ -170,6 +170,25 @@
             <canvas id="mainCanvas"></canvas>
             <canvas id="overlayCanvas"></canvas>
           </div>
+          <!-- 选区操作浮层 -->
+          <div id="selectionActions" class="selection-actions" style="display:none;">
+            <button class="sa-btn sa-btn-primary" id="btnDeleteSelection" title="去除选区内背景">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+                <line x1="10" y1="11" x2="10" y2="17"/>
+                <line x1="14" y1="11" x2="14" y2="17"/>
+              </svg>
+              删除背景
+            </button>
+            <button class="sa-btn" id="btnCancelSelection" title="取消选区">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+              取消
+            </button>
+          </div>
         </div>
 
         <!-- 底部控制栏 -->
