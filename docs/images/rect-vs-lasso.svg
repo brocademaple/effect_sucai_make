@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520">
+  <rect width="1200" height="520" fill="#111827"/>
+  <style>
+    .h{font:700 26px 'Segoe UI',sans-serif;fill:#e5e7eb}
+    .t{font:600 18px 'Segoe UI',sans-serif;fill:#e5e7eb}
+    .s{font:400 14px 'Segoe UI',sans-serif;fill:#9ca3af}
+  </style>
+  <text x="32" y="46" class="h">矩形选区 vs 自由套索（示意图）</text>
+
+  <rect x="40" y="80" width="520" height="390" rx="14" fill="#1f2937" stroke="#6366f1"/>
+  <text x="64" y="118" class="t">矩形选区</text>
+  <text x="64" y="144" class="s">适合规则主体，速度快</text>
+  <rect x="90" y="180" width="420" height="240" fill="#e5e7eb"/>
+  <circle cx="300" cy="300" r="92" fill="#e11d48"/>
+  <rect x="160" y="210" width="280" height="180" fill="none" stroke="#4f46e5" stroke-width="5" stroke-dasharray="10 6"/>
+
+  <rect x="640" y="80" width="520" height="390" rx="14" fill="#1f2937" stroke="#22c55e"/>
+  <text x="664" y="118" class="t">自由套索</text>
+  <text x="664" y="144" class="s">适合不规则主体，控制更精细</text>
+  <rect x="690" y="180" width="420" height="240" fill="#e5e7eb"/>
+  <circle cx="900" cy="300" r="92" fill="#e11d48"/>
+  <path d="M760 300 Q790 210 885 205 Q990 210 1030 300 Q990 390 885 395 Q790 385 760 300 Z" fill="none" stroke="#22c55e" stroke-width="5" stroke-dasharray="10 6"/>
+</svg>
