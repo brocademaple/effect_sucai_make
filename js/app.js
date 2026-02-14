@@ -13,6 +13,7 @@
     currentData: null,    // Current ImageData (with modifications)
     maskData: null,       // Alpha mask: 255 = visible, 0 = removed
     tool: 'select',
+    brushShape: 'circle', // 'circle' | 'square' | 'line'
     zoom: 1,
     panX: 0,
     panY: 0,
@@ -39,12 +40,18 @@
     previewCanvas: $('#previewCanvas'),
     btnUpload: $('#btnUpload'),
     btnUploadCenter: $('#btnUploadCenter'),
+    btnExportHeader: $('#btnExportHeader'),
+    exportWrapper: $('.export-wrapper'),
+    exportDropdown: $('#exportDropdown'),
     btnExport: $('#btnExport'),
     btnUndo: $('#btnUndo'),
     btnRedo: $('#btnRedo'),
     btnReset: $('#btnReset'),
     btnZoomIn: $('#btnZoomIn'),
     btnZoomOut: $('#btnZoomOut'),
+    btnFitScreen: $('#btnFitScreen'),
+    btnMove: $('#btnMove'),
+    zoomSlider: $('#zoomSlider'),
     statusInfo: $('#statusInfo'),
     statusSize: $('#statusSize'),
     statusZoom: $('#statusZoom'),
@@ -61,7 +68,9 @@
     cropToContent: $('#cropToContent'),
     toleranceGroup: $('#toleranceGroup'),
     brushSizeGroup: $('#brushSizeGroup'),
+    brushShapeGroup: $('#brushShapeGroup'),
     featherGroup: $('#featherGroup'),
+    restoreHint: $('#restoreHint'),
     loadingOverlay: $('#loadingOverlay'),
     loadingText: $('#loadingText'),
   };
@@ -103,7 +112,7 @@
     });
     canvasArea.addEventListener('drop', handleDrop);
 
-    // Tool selection
+    // Tool selection (left sidebar)
     $$('.tool-btn[data-tool]').forEach(btn => {
       btn.addEventListener('click', () => selectTool(btn.dataset.tool));
     });
@@ -115,13 +124,43 @@
     dom.overlayCanvas.addEventListener('mouseleave', onCanvasMouseUp);
     dom.overlayCanvas.addEventListener('wheel', onCanvasWheel, { passive: false });
 
-    // Buttons
+    // Bottom bar — view controls
     dom.btnZoomIn.addEventListener('click', () => changeZoom(0.2));
     dom.btnZoomOut.addEventListener('click', () => changeZoom(-0.2));
+    dom.btnFitScreen.addEventListener('click', fitToScreen);
+    dom.btnMove.addEventListener('click', () => selectTool('move'));
+
+    // Zoom slider
+    dom.zoomSlider.addEventListener('input', () => {
+      state.zoom = parseInt(dom.zoomSlider.value) / 100;
+      applyTransform();
+      updateZoomDisplay();
+    });
+
+    // Actions
     dom.btnUndo.addEventListener('click', undo);
     dom.btnRedo.addEventListener('click', redo);
     dom.btnReset.addEventListener('click', resetImage);
-    dom.btnExport.addEventListener('click', exportImage);
+
+    // Export dropdown toggle
+    dom.btnExportHeader.addEventListener('click', (e) => {
+      if (dom.btnExportHeader.disabled) return;
+      e.stopPropagation();
+      dom.exportWrapper.classList.toggle('open');
+    });
+
+    // Close dropdown on outside click
+    document.addEventListener('click', (e) => {
+      if (!dom.exportWrapper.contains(e.target)) {
+        dom.exportWrapper.classList.remove('open');
+      }
+    });
+
+    // Export action
+    dom.btnExport.addEventListener('click', () => {
+      dom.exportWrapper.classList.remove('open');
+      exportImage();
+    });
 
     // Sliders
     dom.tolerance.addEventListener('input', () => {
@@ -141,6 +180,15 @@
     });
     dom.exportQuality.addEventListener('input', () => {
       dom.qualityVal.textContent = dom.exportQuality.value + '%';
+    });
+
+    // Brush shape buttons
+    $$('.shape-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        $$('.shape-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.brushShape = btn.dataset.shape;
+      });
     });
 
     // Preview background
@@ -190,6 +238,7 @@
         break;
       case 'escape':
         clearSelection();
+        dom.exportWrapper.classList.remove('open');
         break;
     }
   }
@@ -219,7 +268,7 @@
         hideLoading();
         dom.uploadHint.style.display = 'none';
         dom.canvasContainer.style.display = 'flex';
-        dom.btnExport.disabled = false;
+        dom.btnExportHeader.disabled = false;
         dom.btnReset.disabled = false;
         dom.statusSize.textContent = `${img.width} × ${img.height}`;
         setStatus('图片已加载 - 选择工具开始抠图');
@@ -291,15 +340,23 @@
   }
 
   function updateZoomDisplay() {
-    dom.statusZoom.textContent = Math.round(state.zoom * 100) + '%';
+    const pct = Math.round(state.zoom * 100);
+    dom.statusZoom.textContent = pct + '%';
+    dom.zoomSlider.value = pct;
   }
 
   // ===== Tool Selection =====
   function selectTool(tool) {
     state.tool = tool;
+
+    // Update left sidebar buttons
     $$('.tool-btn[data-tool]').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tool === tool);
     });
+
+    // Update bottom bar move button
+    dom.btnMove.classList.toggle('active', tool === 'move');
+
     updateToolParams();
     updateCursor();
     setStatus(getToolHint(tool));
@@ -313,7 +370,7 @@
       magicwand: '魔棒工具 - 点击相似颜色区域来选中并去除',
       autoremove: '自动去背景 - 点击自动检测并去除背景',
       eraser: '橡皮擦 - 拖拽擦除不需要的区域',
-      restore: '恢复画笔 - 拖拽恢复被擦除的区域',
+      restore: '恢复画笔 - 拖拽恢复被擦除的区域（在透明区域涂抹即可还原原图）',
       move: '移动画布 - 拖拽平移画布视图',
     };
     return hints[tool] || '';
@@ -327,7 +384,9 @@
 
     dom.toleranceGroup.style.display = showTolerance ? 'block' : 'none';
     dom.brushSizeGroup.style.display = showBrush ? 'block' : 'none';
+    dom.brushShapeGroup.style.display = showBrush ? 'block' : 'none';
     dom.featherGroup.style.display = showFeather ? 'block' : 'none';
+    dom.restoreHint.style.display = tool === 'restore' ? 'block' : 'none';
   }
 
   function updateCursor() {
@@ -405,12 +464,6 @@
 
     switch (state.tool) {
       case 'select': {
-        const startPos = getCanvasCoords({
-          clientX: state.dragStart.x,
-          clientY: state.dragStart.y,
-          // pass canvas rect reference
-        });
-        // Recalculate from original start
         const rect = dom.overlayCanvas.getBoundingClientRect();
         const sx = (state.dragStart.x - rect.left) / state.zoom;
         const sy = (state.dragStart.y - rect.top) / state.zoom;
@@ -490,11 +543,11 @@
     clearOverlay();
     if (!state.selection) return;
     const s = state.selection;
-    overlayCtx.strokeStyle = '#e94560';
+    overlayCtx.strokeStyle = '#6366f1';
     overlayCtx.lineWidth = 2 / state.zoom;
     overlayCtx.setLineDash([6, 4]);
     overlayCtx.strokeRect(s.x, s.y, s.w, s.h);
-    overlayCtx.fillStyle = 'rgba(233, 69, 96, 0.1)';
+    overlayCtx.fillStyle = 'rgba(99, 102, 241, 0.1)';
     overlayCtx.fillRect(s.x, s.y, s.w, s.h);
     overlayCtx.setLineDash([]);
   }
@@ -507,21 +560,34 @@
     for (let i = 1; i < lassoPoints.length; i++) {
       overlayCtx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
     }
-    overlayCtx.strokeStyle = '#e94560';
+    overlayCtx.strokeStyle = '#6366f1';
     overlayCtx.lineWidth = 2 / state.zoom;
     overlayCtx.stroke();
-    overlayCtx.fillStyle = 'rgba(233, 69, 96, 0.1)';
+    overlayCtx.fillStyle = 'rgba(99, 102, 241, 0.1)';
     overlayCtx.fill();
   }
 
   function drawBrushCursor(pos) {
     clearOverlay();
     const size = parseInt(dom.brushSize.value);
-    overlayCtx.beginPath();
-    overlayCtx.arc(pos.x, pos.y, size / 2, 0, Math.PI * 2);
-    overlayCtx.strokeStyle = state.tool === 'eraser' ? '#ff6b81' : '#10b981';
+    const half = size / 2;
+    const color = state.tool === 'eraser' ? '#f87171' : '#34d399';
+    overlayCtx.strokeStyle = color;
     overlayCtx.lineWidth = 1.5 / state.zoom;
-    overlayCtx.stroke();
+
+    switch (state.brushShape) {
+      case 'circle':
+        overlayCtx.beginPath();
+        overlayCtx.arc(pos.x, pos.y, half, 0, Math.PI * 2);
+        overlayCtx.stroke();
+        break;
+      case 'square':
+        overlayCtx.strokeRect(pos.x - half, pos.y - half, size, size);
+        break;
+      case 'line':
+        overlayCtx.strokeRect(pos.x - half, pos.y - half / 3, size, size / 3);
+        break;
+    }
   }
 
   function clearSelection() {
@@ -899,41 +965,87 @@
     return inside;
   }
 
-  // ===== Brush (Eraser / Restore) =====
+  // ===== Brush (Eraser / Restore) — supports circle, square, line shapes =====
   function paintBrush(pos, isRestore) {
     if (!state.image) return;
     const w = state.image.width;
     const h = state.image.height;
-    const radius = parseInt(dom.brushSize.value) / 2;
+    const size = parseInt(dom.brushSize.value);
+    const half = size / 2;
+    const shape = state.brushShape;
 
-    const x1 = Math.max(0, Math.floor(pos.x - radius));
-    const y1 = Math.max(0, Math.floor(pos.y - radius));
-    const x2 = Math.min(w - 1, Math.ceil(pos.x + radius));
-    const y2 = Math.min(h - 1, Math.ceil(pos.y + radius));
+    // Determine bounding box based on shape
+    let x1, y1, x2, y2;
+    if (shape === 'line') {
+      // Horizontal line: full width, narrow height
+      const lineH = Math.max(1, size / 3);
+      x1 = Math.max(0, Math.floor(pos.x - half));
+      y1 = Math.max(0, Math.floor(pos.y - lineH / 2));
+      x2 = Math.min(w - 1, Math.ceil(pos.x + half));
+      y2 = Math.min(h - 1, Math.ceil(pos.y + lineH / 2));
+    } else {
+      x1 = Math.max(0, Math.floor(pos.x - half));
+      y1 = Math.max(0, Math.floor(pos.y - half));
+      x2 = Math.min(w - 1, Math.ceil(pos.x + half));
+      y2 = Math.min(h - 1, Math.ceil(pos.y + half));
+    }
 
     for (let y = y1; y <= y2; y++) {
       for (let x = x1; x <= x2; x++) {
         const dx = x - pos.x;
         const dy = y - pos.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist <= radius) {
+        let inBrush = false;
+        let edgeFactor = 1; // 1 = fully inside, 0 = fully outside
+
+        switch (shape) {
+          case 'circle': {
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist <= half) {
+              inBrush = true;
+              // Soft edge for outer 20%
+              if (dist > half * 0.8) {
+                edgeFactor = (half - dist) / (half * 0.2);
+              }
+            }
+            break;
+          }
+          case 'square': {
+            if (Math.abs(dx) <= half && Math.abs(dy) <= half) {
+              inBrush = true;
+              // Soft edge for outer 15%
+              const edgeDist = Math.min(half - Math.abs(dx), half - Math.abs(dy));
+              const softZone = half * 0.15;
+              if (edgeDist < softZone) {
+                edgeFactor = edgeDist / softZone;
+              }
+            }
+            break;
+          }
+          case 'line': {
+            const lineH = Math.max(1, size / 3);
+            if (Math.abs(dx) <= half && Math.abs(dy) <= lineH / 2) {
+              inBrush = true;
+              // Soft edge on ends
+              const edgeDistX = half - Math.abs(dx);
+              const edgeDistY = lineH / 2 - Math.abs(dy);
+              const softZone = Math.min(half, lineH / 2) * 0.2;
+              const minEdge = Math.min(edgeDistX, edgeDistY);
+              if (minEdge < softZone && softZone > 0) {
+                edgeFactor = minEdge / softZone;
+              }
+            }
+            break;
+          }
+        }
+
+        if (inBrush) {
           const i = y * w + x;
           if (isRestore) {
-            // Soft edge for restore brush
-            if (dist > radius * 0.8) {
-              const softAlpha = Math.round(((radius - dist) / (radius * 0.2)) * 255);
-              state.maskData[i] = Math.max(state.maskData[i], softAlpha);
-            } else {
-              state.maskData[i] = 255;
-            }
+            const restoreAlpha = Math.round(edgeFactor * 255);
+            state.maskData[i] = Math.max(state.maskData[i], restoreAlpha);
           } else {
-            // Soft edge for eraser
-            if (dist > radius * 0.8) {
-              const softAlpha = Math.round(((radius - dist) / (radius * 0.2)) * 255);
-              state.maskData[i] = Math.min(state.maskData[i], 255 - softAlpha);
-            } else {
-              state.maskData[i] = 0;
-            }
+            const eraseAlpha = Math.round((1 - edgeFactor) * 255);
+            state.maskData[i] = Math.min(state.maskData[i], eraseAlpha);
           }
         }
       }
